@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>RSA Interactive Tool</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      background: linear-gradient(135deg, #e3f2fd, #fce4ec);
+      margin: 0;
+      padding: 40px;
+    }
+    h2 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 25px;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+      background: #fff;
+      padding: 25px 30px;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+    }
+    .box {
+      background: #f9f9f9;
+      border-left: 4px solid #2196f3;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 15px;
+    }
+    label {
+      font-weight: bold;
+      display: block;
+      margin: 8px 0 5px;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      margin-bottom: 15px;
+      font-size: 14px;
+      transition: border 0.2s;
+    }
+    input:focus {
+      border: 1px solid #2196f3;
+      outline: none;
+    }
+    button {
+      background: #2196f3;
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      margin-right: 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+    button:hover {
+      background: #e8450e;
+    }
+    #output {
+      background: #212121;
+      color: #e0e0e0;
+      padding: 15px;
+      border-radius: 8px;
+      font-family: Consolas, monospace;
+      white-space: pre-wrap;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h2>🔑 RSA Interactive Tool</h2>
+    <h3>Lý thuyết</h3>
+    <div class="theory">
+      <b>Nguyên lý RSA:</b><br>
+      - Chọn 2 số nguyên tố lớn p, q.<br>
+      - Tính <i>n = p·q</i>, <i>φ(n) = (p-1)(q-1)</i>.<br>
+      - Chọn số <i>e</i> sao cho gcd(e, φ(n)) = 1.<br>
+      - Tìm <i>d</i> là nghịch đảo modular của e mod φ(n).<br>
+      - Khóa công khai: (e, n), khóa bí mật: (d, n).<br><br>
+
+      <b>Tại sao RSA bảo mật?</b><br>
+      - Bảo mật dựa trên việc khó phân tích thừa số n thành p và q.<br>
+      - Nếu không biết p, q thì không thể tính d từ e.<br><br>
+
+      <b>Hệ số e phổ biến:</b><br>
+      - Thường chọn e = 65537 (2^16+1).<br>
+      - Lý do: số nguyên tố, nhỏ vừa phải, giúp mã hoá nhanh và an toàn.<br><br>
+
+      <b>Padding (PKCS#1 v1.5 vs OAEP):</b><br>
+      - Nếu chỉ mã hoá m^e mod n thì dễ bị tấn công (chọn bản rõ).<br>
+      - Cần thêm <i>padding</i> để ngẫu nhiên hóa dữ liệu trước khi mã hoá.<br>
+      - PKCS#1 v1.5: padding đơn giản, cũ.<br>
+      - OAEP: padding hiện đại, an toàn hơn, chống tấn công chọn bản rõ.<br>
+    </div>
+    <br>
+
+  <div class="box">
+    <label>Nhập p (số nguyên tố):</label><br>
+    <input type="number" id="p" value="61"><br>
+
+    <label>Nhập q (số nguyên tố):</label><br>
+    <input type="number" id="q" value="53"><br>
+
+    <label>Nhập e (1 < e < φ(n)):</label><br>
+    <input type="number" id="e" value="17"><br>
+
+    <label>Plaintext m (số &lt; n):</label><br>
+    <input type="number" id="m" value="65"><br><br>
+
+    <button onclick="generateKeys()">Tạo khóa</button>
+    <button onclick="encrypt()">Mã hoá</button>
+    <button onclick="decrypt()">Giải mã</button>
+  </div>
+
+  <div class="box">
+    <b>Kết quả:</b>
+    <pre id="output"></pre>
+  </div>
+
+  <script>
+    // --- Hàm tiện ích ---
+    function egcd(a, b) {
+      if (b === 0n) return [a, 1n, 0n];
+      let [g, x1, y1] = egcd(b, a % b);
+      return [g, y1, x1 - (a / b) * y1];
+    }
+
+    function modInverse(a, m) {
+      let [g, x, y] = egcd(a, m);
+      if (g !== 1n) throw new Error("Không có nghịch đảo modular");
+      return (x % m + m) % m;
+    }
+
+    function modPow(base, exp, mod) {
+      let result = 1n;
+      base = base % mod;
+      while (exp > 0n) {
+        if (exp % 2n === 1n) result = (result * base) % mod;
+        exp /= 2n;
+        base = (base * base) % mod;
+      }
+      return result;
+    }
+
+    // --- Biến toàn cục ---
+    let n, phi, d, ciphertext;
+
+    function generateKeys() {
+      const p = BigInt(document.getElementById("p").value);
+      const q = BigInt(document.getElementById("q").value);
+      const e = BigInt(document.getElementById("e").value);
+
+      n = p * q;
+      phi = (p - 1n) * (q - 1n);
+
+      try {
+        d = modInverse(e, phi);
+      } catch (err) {
+        document.getElementById("output").textContent = "❌ e không hợp lệ: " + err.message;
+        return;
+      }
+
+      let log = "";
+      log += `p = ${p}\nq = ${q}\n`;
+      log += `n = p*q = ${n}\n`;
+      log += `phi(n) = (p-1)(q-1) = ${phi}\n`;
+      log += `Public key: (n=${n}, e=${e})\n`;
+      log += `Private key: d = ${d}\n`;
+      log += `Kiểm tra: (e*d) mod phi = ${(e*d)%phi}\n`;
+
+      document.getElementById("output").textContent = log;
+    }
+
+    function encrypt() {
+      if (!n || !d) {
+        alert("Hãy tạo khóa trước!");
+        return;
+      }
+      const m = BigInt(document.getElementById("m").value);
+      if (m >= n) {
+        alert("Plaintext phải nhỏ hơn n = " + n);
+        return;
+      }
+      const e = BigInt(document.getElementById("e").value);
+      ciphertext = modPow(m, e, n);
+      document.getElementById("output").textContent += `\nMã hoá: c = m^e mod n = ${ciphertext}`;
+    }
+
+    function decrypt() {
+      if (!ciphertext) {
+        alert("Hãy mã hoá trước!");
+        return;
+      }
+      const mRecovered = modPow(ciphertext, d, n);
+      document.getElementById("output").textContent += `\nGiải mã: m' = c^d mod n = ${mRecovered}`;
+    }
+  </script>
+</body>
+</html>
